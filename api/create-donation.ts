@@ -1,6 +1,7 @@
-import { IncomingForm } from 'formidable';
+import { IncomingForm, File } from 'formidable';
 import { promises as fs } from 'fs';
 import { supabase } from '../services/supabaseClient';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export const config = {
     api: {
@@ -8,33 +9,42 @@ export const config = {
     },
 };
 
-export default async function handler(req, res) {
+type FormidableResult = {
+    fields: { [key: string]: string | string[] };
+    files: { [key: string]: File | File[] };
+}
+
+const parseForm = (req: NextApiRequest): Promise<FormidableResult> => {
+    return new Promise((resolve, reject) => {
+        const form = new IncomingForm();
+        form.parse(req, (err, fields, files) => {
+            if (err) return reject(err);
+            resolve({ fields, files });
+        });
+    });
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
         return res.status(405).end('Method Not Allowed');
     }
 
     try {
-        const form = new IncomingForm();
-
-        const [fields, files] = await new Promise((resolve, reject) => {
-            form.parse(req, (err, fields, files) => {
-                if (err) return reject(err);
-                resolve([fields, files]);
-            });
-        });
+        const { fields, files } = await parseForm(req);
 
         // --- 1. Validate Form Data ---
-        const { quantity, donorName } = fields;
-        const proofFile = files.proof;
+        const quantity = Array.isArray(fields.quantity) ? fields.quantity[0] : fields.quantity;
+        const donorName = Array.isArray(fields.donorName) ? fields.donorName[0] : fields.donorName;
+        const proofFile = Array.isArray(files.proof) ? files.proof[0] : files.proof;
 
-        if (!quantity || !proofFile || Array.isArray(proofFile) === false || proofFile.length === 0) {
+        if (!quantity || !proofFile) {
             return res.status(400).json({ message: 'Missing required fields or files.' });
         }
 
-        const qty = parseInt(Array.isArray(quantity) ? quantity[0] : quantity, 10);
-        const name = Array.isArray(donorName) ? donorName[0] : donorName || 'Anonymous Donor';
-        const file = proofFile[0];
+        const qty = parseInt(quantity, 10);
+        const name = donorName || 'Anonymous Donor';
+        const file = proofFile;
 
         // --- 2. Upload to Supabase Storage ---
         const fileContent = await fs.readFile(file.filepath);
@@ -63,14 +73,12 @@ export default async function handler(req, res) {
             id: `DON-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
             donor_name: name,
             tree_quantity: qty,
-            amount: qty * 10, // Assuming TREE_PRICE is 10
+            amount: qty * 10,
             status: 'PENDING',
             proof_url: proofUrl,
         };
 
-        const { error: insertError } = await supabase
-            .from('donations')
-            .insert(donationData);
+        const { error: insertError } = await supabase.from('donations').insert(donationData);
 
         if (insertError) {
             console.error('Supabase insert error:', insertError);
@@ -80,7 +88,7 @@ export default async function handler(req, res) {
         res.status(200).json({ message: 'Donation submitted successfully!', data: donationData });
 
     } catch (error) {
-        console.error('Create-donation API error:', error.message);
+        console.error('Create-donation API error:', error);
         res.status(500).json({ message: 'Internal Server Error' });
     }
 }
