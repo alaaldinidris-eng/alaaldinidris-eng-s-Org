@@ -1,0 +1,7 @@
+{
+  "name": "Copy of TreeFund - 1 Tree = RM10",
+  "description": "A real-time tree fundraising platform where donors can sponsor trees via TNG QR, upload receipts, and track progress. Features a robust admin dashboard for manual verification and campaign management.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TreeFund | Sponsor a Tree</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      // Global shims for node-like environments
+      window.process = { 
+        env: { 
+          NODE_ENV: 'production',
+          API_KEY: "" 
+        },
+        nextTick: (cb) => setTimeout(cb, 0)
+      };
+      window.global = window;
+      
+      // Detailed error reporting to the UI
+      window.addEventListener('error', function(event) {
+        console.error("Critical Load Error:", event.error);
+        const root = document.getElementById('root');
+        if (root && root.innerHTML === '') {
+          root.innerHTML = `
+            <div style="padding: 40px; font-family: system-ui; text-align: center; color: #ef4444; background: white; min-height: 100vh;">
+              <h1 style="font-weight: 800; font-size: 24px;">Application Initialization Failed</h1>
+              <p style="color: #64748b; margin-top: 10px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                ${event.message || "A JavaScript error occurred before the app could start."}
+              </p>
+              <div style="margin-top: 20px; font-size: 12px; color: #94a3b8; font-family: monospace; background: #f1f5f9; padding: 10px; border-radius: 8px; display: inline-block;">
+                ${event.filename}:${event.lineno}
+              </div>
+              <br/>
+              <button onclick="location.reload()" style="margin-top: 30px; padding: 12px 24px; background: #166534; color: white; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(22, 101, 52, 0.2);">
+                Restart App
+              </button>
+            </div>
+          `;
+        }
+      });
+    </script>
+    <style>
+      body { font-family: 'Inter', sans-serif; background-color: #f8fafc; margin: 0; padding: 0; }
+      .green-gradient { background: linear-gradient(135deg, #166534 0%, #15803d 100%); }
+      /* Pre-load background to avoid flash */
+      #root:empty { background-color: #f8fafc; min-height: 100vh; }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom": "https://esm.sh/react-dom@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "@google/genai": "https://esm.sh/@google/genai@1.3.0",
+        "lucide-react": "https://esm.sh/lucide-react@0.344.0"
+      }
+    }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="index.tsx"></script>
+  </body>
+</html>
