@@ -1,196 +1,223 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Donation, DonationStatus, Campaign, Stats } from '../types';
-import { getDonations, updateDonationStatus, getCampaign, updateCampaign, getStats } from '../services/supabaseService';
+import { getCampaign, getStats } from '../services/supabaseService';
 import { ICONS } from '../constants';
 
+// Admin-specific data fetching and mutation functions
+const api = {
+    getAllDonations: async (): Promise<Donation[]> => {
+        const res = await fetch('/api/get-all-donations');
+        if (!res.ok) throw new Error('Failed to fetch donations');
+        return res.json();
+    },
+    updateDonationStatus: async (id: string, status: DonationStatus) => {
+        const res = await fetch('/api/update-donation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, status }),
+        });
+        if (!res.ok) throw new Error('Failed to update donation');
+        return res.json();
+    },
+    updateSettings: async (formData: FormData) => {
+        const res = await fetch('/api/update-settings', {
+            method: 'POST',
+            body: formData,
+        });
+        if (!res.ok) throw new Error('Failed to update settings');
+        return res.json();
+    }
+};
+
 export const AdminDashboard: React.FC = () => {
-  const [donations, setDonations] = useState<Donation[]>([]);
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [data, setData] = useState<{ donations: Donation[], campaign: Campaign | null, stats: Stats | null }>({ donations: [], campaign: null, stats: null });
+  const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'pending' | 'history' | 'settings'>('pending');
-  const [isEditing, setIsEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
 
-  useEffect(() => {
-    refreshData();
+  const refreshData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [donations, campaign, stats] = await Promise.all([api.getAllDonations(), getCampaign(), getStats()]);
+      setData({ donations, campaign, stats });
+    } catch (error) { console.error("Failed to refresh admin data:", error); }
+    finally { setIsLoading(false); }
   }, []);
 
-  const refreshData = () => {
-    setDonations(getDonations());
-    setCampaign(getCampaign());
-    setStats(getStats());
+  useEffect(() => { refreshData(); }, [refreshData]);
+
+  const handleStatusChange = async (id: string, status: DonationStatus) => {
+    try {
+        await api.updateDonationStatus(id, status);
+        await refreshData();
+    } catch (error) { alert(`Error: ${error.message}`); }
   };
 
-  const handleStatusChange = (id: string, status: DonationStatus) => {
-    updateDonationStatus(id, status);
-    refreshData();
-  };
-
-  const handleUpdateCampaign = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const updated = updateCampaign({
-      title: formData.get('title') as string,
-      goal_trees: parseInt(formData.get('goal') as string),
-      tree_price: parseInt(formData.get('price') as string),
-      qr_image_url: formData.get('qr') as string,
-    });
-    setCampaign(updated);
-    setIsEditing(false);
-    refreshData();
-  };
-
-  const filteredDonations = donations.filter(d => 
+  const filteredDonations = data.donations.filter(d =>
     d.donor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    d.id.includes(searchTerm)
+    d.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const pendingDonations = filteredDonations.filter(d => d.status === 'PENDING');
+  const historyDonations = filteredDonations.filter(d => d.status !== 'PENDING');
 
-  const pendingDonations = filteredDonations.filter(d => d.status === DonationStatus.PENDING);
-  const historyDonations = filteredDonations.filter(d => d.status !== DonationStatus.PENDING);
+  if (isLoading) return <div className="text-center p-24 font-black text-gray-400">Loading Admin Console...</div>;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-black text-gray-900 tracking-tight">Campaign Command</h1>
-          <p className="text-gray-500 font-medium">Verify contributions and manage the mission.</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <input 
-            type="text" 
-            placeholder="Search sponsors..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-4 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm outline-none w-64 shadow-sm"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Funds Raised" value={`RM ${stats?.totalAmount.toLocaleString()}`} icon={ICONS.Wallet} color="text-green-600" bg="bg-green-50" />
-        <StatCard title="Approved Trees" value={stats?.totalTrees.toLocaleString() || '0'} icon={ICONS.Tree} color="text-green-600" bg="bg-green-50" />
-        <StatCard title="Pending" value={stats?.pendingTrees.toLocaleString() || '0'} icon={ICONS.Clock} color="text-yellow-600" bg="bg-yellow-50" />
-        <StatCard title="Goal" value={stats?.goalTrees.toLocaleString() || '0'} icon={ICONS.Shield} color="text-blue-600" bg="bg-blue-50" />
-      </div>
-
-      <div className="bg-gray-100 p-1.5 rounded-2xl inline-flex">
-        {['pending', 'history', 'settings'].map((tab) => (
-          <button 
-            key={tab}
-            onClick={() => setActiveTab(tab as any)}
-            className={`px-6 py-2.5 rounded-[0.9rem] text-sm font-black transition-all ${activeTab === tab ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500'}`}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      <div>
-        {activeTab === 'pending' && (
-          <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Contributor</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Impact</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Receipt</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Verification</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {pendingDonations.length > 0 ? pendingDonations.map(d => (
-                  <tr key={d.id} className="hover:bg-gray-50/80 transition-colors">
-                    <td className="px-8 py-6">
-                      <p className="font-black text-gray-900">{d.donor_name}</p>
-                      <p className="text-[10px] text-gray-400 font-bold uppercase">{new Date(d.created_at).toLocaleString()}</p>
-                    </td>
-                    <td className="px-8 py-6">
-                      <span className="font-black text-gray-800">{d.tree_quantity} Trees</span>
-                      <p className="text-xs font-bold text-green-600">RM {d.amount}</p>
-                    </td>
-                    <td className="px-8 py-6 text-center">
-                      <button onClick={() => setViewingReceipt(d.receipt_url)} className="text-blue-600 text-xs font-black underline">View</button>
-                    </td>
-                    <td className="px-8 py-6 text-right">
-                       <div className="flex items-center justify-end gap-3">
-                          <button onClick={() => handleStatusChange(d.id, DonationStatus.APPROVED)} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-600 hover:text-white transition-all">{ICONS.Check}</button>
-                          <button onClick={() => handleStatusChange(d.id, DonationStatus.REJECTED)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all">{ICONS.X}</button>
-                       </div>
-                    </td>
-                  </tr>
-                )) : (
-                  <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-black">Queue is clear!</td></tr>
-                )}
-              </tbody>
-            </table>
+    <div className="bg-gray-50 min-h-screen">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-black text-gray-900">Admin Console</h1>
+            <p className="text-gray-600">Manage donations and campaign settings.</p>
           </div>
-        )}
+          <input type="text" placeholder="Search by name or ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="form-input w-full md:w-72" />
+        </header>
 
-        {activeTab === 'history' && (
-          <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-gray-50/50 border-b border-gray-100">
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Contributor</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Impact</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {historyDonations.map(d => (
-                  <tr key={d.id}>
-                    <td className="px-8 py-6 font-black">{d.donor_name}</td>
-                    <td className="px-8 py-6">
-                      <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${d.status === DonationStatus.APPROVED ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {d.status}
-                      </span>
-                    </td>
-                    <td className="px-8 py-6 font-black">{d.tree_quantity} Trees</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            <StatCard title="Total Raised" value={`RM ${data.stats?.totalAmount.toLocaleString()}`} icon={ICONS.Wallet} />
+            <StatCard title="Trees Funded" value={data.stats?.totalTrees.toLocaleString()} icon={ICONS.Tree} />
+            <StatCard title="Pending Review" value={pendingDonations.length.toLocaleString()} icon={ICONS.Clock} />
+            <StatCard title="Campaign Goal" value={data.campaign?.goal_trees.toLocaleString()} icon={ICONS.Shield} />
+        </div>
 
-        {activeTab === 'settings' && campaign && (
-          <div className="max-w-2xl mx-auto bg-white rounded-[2.5rem] shadow-xl border border-gray-100 p-10">
-            <form onSubmit={handleUpdateCampaign} className="space-y-8">
-              <input name="title" defaultValue={campaign.title} disabled={!isEditing} className="w-full p-4 bg-gray-50 border rounded-2xl font-black" placeholder="Title" />
-              <div className="grid grid-cols-2 gap-4">
-                <input name="price" type="number" defaultValue={campaign.tree_price} disabled={!isEditing} className="w-full p-4 bg-gray-50 border rounded-2xl font-black" placeholder="Price" />
-                <input name="goal" type="number" defaultValue={campaign.goal_trees} disabled={!isEditing} className="w-full p-4 bg-gray-50 border rounded-2xl font-black" placeholder="Goal" />
-              </div>
-              <input name="qr" defaultValue={campaign.qr_image_url} disabled={!isEditing} className="w-full p-4 bg-gray-50 border rounded-2xl font-black text-xs" placeholder="QR URL" />
-              {isEditing ? (
-                <div className="flex gap-4">
-                  <button type="submit" className="flex-1 py-4 bg-green-600 text-white font-black rounded-2xl">Save</button>
-                  <button type="button" onClick={() => setIsEditing(false)} className="flex-1 py-4 bg-gray-100 text-gray-500 font-black rounded-2xl">Cancel</button>
+        <div className="bg-white/60 backdrop-blur-sm p-2 rounded-2xl inline-flex border gap-2">
+            {['pending', 'history', 'settings'].map(tab => (
+                <button key={tab} onClick={() => setActiveTab(tab as any)} className={`tab-btn ${activeTab === tab ? 'tab-btn-active' : ''}`}>
+                    {ICONS[tab] || ICONS.Trees}<span>{tab.charAt(0).toUpperCase() + tab.slice(1)}</span>
+                </button>
+            ))}
+        </div>
+
+        <main className="bg-white rounded-2xl shadow-sm border p-8">
+            {activeTab === 'pending' && <DonationTable donations={pendingDonations} onStatusChange={handleStatusChange} onViewReceipt={setViewingReceipt} isPending={true} />}
+            {activeTab === 'history' && <DonationTable donations={historyDonations} isPending={false} />}
+            {activeTab === 'settings' && <SettingsPane campaign={data.campaign} onSave={refreshData} />}
+        </main>
+
+        {viewingReceipt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setViewingReceipt(null)}>
+                <div className="bg-white p-2 rounded-2xl shadow-2xl max-w-lg w-full">
+                    <img src={viewingReceipt} alt="Receipt" className="rounded-xl w-full" />
                 </div>
-              ) : (
-                <button type="button" onClick={() => setIsEditing(true)} className="w-full py-4 bg-gray-900 text-white font-black rounded-2xl">Edit Settings</button>
-              )}
-            </form>
-          </div>
+            </div>
         )}
       </div>
-
-      {viewingReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setViewingReceipt(null)}>
-          <img src={viewingReceipt} alt="Receipt" className="max-w-full max-h-full rounded-xl shadow-2xl" />
-        </div>
-      )}
     </div>
   );
 };
 
-const StatCard: React.FC<{ title: string; value: string; icon: React.ReactNode; color: string; bg: string }> = ({ title, value, icon, color, bg }) => (
-  <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm flex items-center gap-5">
-    <div className={`w-14 h-14 rounded-2xl ${bg} ${color} flex items-center justify-center`}>{icon}</div>
+const DonationTable = ({ donations, onStatusChange, onViewReceipt, isPending }) => (
+    <div className="overflow-x-auto">
+        <table className="w-full text-left">
+            <thead>
+                <tr className="border-b-2 border-gray-100">
+                    <th className="th">Contributor</th>
+                    <th className="th">Impact</th>
+                    {isPending ? <>
+                        <th className="th text-center">Receipt</th>
+                        <th className="th text-right">Actions</th>
+                    </> : <th className="th">Status</th>}
+                </tr>
+            </thead>
+            <tbody>
+                {donations.length > 0 ? donations.map(d => (
+                    <tr key={d.id} className="border-b border-gray-100 last:border-none">
+                        <td className="td font-semibold">{d.donor_name}<br/><span className="font-normal text-xs text-gray-500">{new Date(d.created_at).toLocaleString()}</span></td>
+                        <td className="td">{d.tree_quantity} Trees<br/><span className="font-bold text-green-600">RM {d.amount}</span></td>
+                        {isPending ? <>
+                            <td className="td text-center"><a href={d.proof_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 font-bold hover:underline">View Proof</a></td>
+                            <td className="td text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                    <button onClick={() => onStatusChange(d.id, DonationStatus.APPROVED)} className="action-btn bg-green-100 text-green-700">{ICONS.Check}</button>
+                                    <button onClick={() => onStatusChange(d.id, DonationStatus.REJECTED)} className="action-btn bg-red-100 text-red-700">{ICONS.X}</button>
+                                </div>
+                            </td>
+                        </> : <td className="td"><span className={`status-badge ${d.status === 'APPROVED' ? 'status-badge-approved' : 'status-badge-rejected'}`}>{d.status}</span></td>}
+                    </tr>
+                )) : <tr><td colSpan={4} className="text-center py-16 text-gray-500 font-semibold">No donations found.</td></tr>}
+            </tbody>
+        </table>
+    </div>
+);
+
+const SettingsPane = ({ campaign, onSave }) => {
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [qrPreview, setQrPreview] = useState<string | null>(campaign?.qr_image_url || null);
+
+    const handleQrChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => setQrPreview(reader.result as string);
+            reader.readAsDataURL(file);
+        }
+    }
+
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+            await api.updateSettings(new FormData(e.currentTarget));
+            alert("Settings saved successfully!");
+            onSave();
+        } catch (error) { alert(`Error: ${error.message}`); }
+        finally { setIsSubmitting(false); }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto space-y-6">
+            <div className="form-group">
+                <label className="form-label">Campaign Title</label>
+                <input name="title" defaultValue={campaign?.title} className="form-input" />
+            </div>
+            <div className="form-group">
+                <label className="form-label">Description</label>
+                <textarea name="description" defaultValue={campaign?.description} rows={3} className="form-input" />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="form-group">
+                    <label className="form-label">Price per Tree (RM)</label>
+                    <input name="tree_price" type="number" defaultValue={campaign?.tree_price} className="form-input" />
+                </div>
+                <div className="form-group">
+                    <label className="form-label">Goal (Trees)</label>
+                    <input name="goal_trees" type="number" defaultValue={campaign?.goal_trees} className="form-input" />
+                </div>
+            </div>
+            <div className="form-group">
+                <label className="form-label">Payment QR Code</label>
+                <div className="mt-2 flex items-center gap-6 p-4 border-2 border-gray-100 rounded-xl">
+                    <img src={qrPreview || campaign?.qr_image_url} alt="QR Code" className="w-24 h-24 rounded-lg bg-gray-100 object-cover" />
+                    <input name="qr_code" type="file" accept="image/*" onChange={handleQrChange} className="text-sm" />
+                </div>
+            </div>
+            <button type="submit" disabled={isSubmitting} className="btn-primary w-full py-4 text-base">
+                {isSubmitting ? "Saving..." : "Save Campaign Settings"}
+            </button>
+        </form>
+    )
+}
+
+const StatCard = ({ title, value, icon }) => (
+  <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center gap-4">
+    <div className="w-12 h-12 rounded-xl bg-gray-100 text-gray-600 flex items-center justify-center">{icon}</div>
     <div>
-      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{title}</p>
-      <p className="text-2xl font-black text-gray-900 tracking-tight">{value}</p>
+      <p className="text-sm text-gray-500 font-semibold">{title}</p>
+      <p className="text-2xl font-black text-gray-900">{value || '0'}</p>
     </div>
   </div>
 );
+
+/* Base styles for the new design - assumed to be in a global CSS file
+.form-label { @apply block text-sm font-bold text-gray-600 mb-2; }
+.form-input { @apply w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-lg font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition; }
+.tab-btn { @apply px-4 py-2 rounded-lg font-bold text-gray-500 flex items-center gap-2; }
+.tab-btn-active { @apply bg-white text-green-600 shadow-md; }
+.th { @apply px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider; }
+.td { @apply px-6 py-4 text-sm text-gray-800; }
+.action-btn { @apply p-2 rounded-lg transition-colors; }
+.status-badge { @apply px-2 py-1 text-xs font-bold rounded-full uppercase; }
+.status-badge-approved { @apply bg-green-100 text-green-800; }
+.status-badge-rejected { @apply bg-red-100 text-red-800; }
+*/
