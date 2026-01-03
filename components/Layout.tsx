@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { ICONS } from '../constants';
 
@@ -6,59 +5,41 @@ interface LayoutProps {
   children: React.ReactNode;
   isAdmin?: boolean;
   onLogout?: () => void;
-  onAdminClick?: () => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, isAdmin, onLogout, onAdminClick }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, isAdmin, onLogout }) => {
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-40">
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200/80 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.location.hash = ''}>
-              <div className="text-green-600 p-2 bg-green-50 rounded-xl">
+          <div className="flex justify-between items-center h-20">
+            <a href="/#" className="flex items-center gap-3">
+              <div className="w-12 h-12 text-green-600 bg-green-100 rounded-2xl flex items-center justify-center shadow-inner-sm">
                 {ICONS.Tree}
               </div>
-              <span className="text-xl font-extrabold text-gray-900 tracking-tight">Tree<span className="text-green-600">Fund</span></span>
-            </div>
-
-            <nav className="flex items-center gap-4">
+              <span className="text-2xl font-black text-gray-800">Tree<span className="text-green-600">Fund</span></span>
+            </a>
+            <nav>
               {isAdmin ? (
-                <>
-                  <button 
-                    onClick={() => window.location.hash = '#admin'} 
-                    className="text-sm font-medium text-gray-600 hover:text-green-600 px-3 py-2 flex items-center gap-2"
-                  >
-                    {ICONS.Dashboard} Dashboard
-                  </button>
-                  <button 
-                    onClick={onLogout}
-                    className="text-sm font-medium text-red-600 hover:text-red-700 px-3 py-2 flex items-center gap-2"
-                  >
-                    {ICONS.Logout} Logout
-                  </button>
-                </>
-              ) : (
-                <button 
-                  onClick={onAdminClick}
-                  className="text-sm font-medium text-gray-500 hover:text-gray-900"
-                >
-                  Admin Portal
+                <button onClick={onLogout} className="font-bold text-sm text-red-600 hover:text-red-800 flex items-center gap-2">
+                  {ICONS.Logout} Logout
                 </button>
+              ) : (
+                <a href="/#admin" className="font-bold text-sm text-gray-500 hover:text-gray-800">
+                  Admin Portal
+                </a>
               )}
             </nav>
           </div>
         </div>
       </header>
 
-      <main className="flex-grow">
-        {children}
-      </main>
+      <main className="flex-grow">{children}</main>
 
-      <footer className="bg-white border-t border-gray-100 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-gray-500 text-sm">
-          <p>© {new Date().getFullYear()} TreeFund Malaysia. All rights reserved.</p>
-          <p className="mt-2">1 TREE = RM10. Let's make a difference together.</p>
+      <footer className="bg-white border-t border-gray-200/80 py-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-gray-500">
+          <p>&copy; {new Date().getFullYear()} TreeFund. A Project for a Greener Tomorrow.</p>
+          <p className="mt-1">All donations are processed securely.</p>
         </div>
       </footer>
     </div>

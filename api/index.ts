@@ -1,10 +1,10 @@
 import { supabase } from '../services/supabaseClient';
-import { Campaign, Donation, Stats } from '../types';
-import { MOCK_QR_CODE } from '../constants'; // Keep using the mock QR for now
+import { Campaign, Stats } from '../types';
+import { MOCK_QR_CODE } from '../constants';
 
-// A default campaign object to use as a fallback.
-const defaultCampaign: Campaign = {
-    id: 'main-campaign',
+// A fallback campaign object in case the database is unreachable or empty.
+const fallbackCampaign: Campaign = {
+    id: 'fallback-campaign',
     title: 'Restore our Rainforests',
     description: 'Join us in restoring the biodiversity of Malaysian tropical forests.',
     tree_price: 10,
@@ -15,7 +15,21 @@ const defaultCampaign: Campaign = {
 
 export default async function handler(req, res) {
     try {
-        // Fetch all approved donations from Supabase
+        // --- Step 1: Fetch Campaign Settings from Supabase ---
+        const { data: settings, error: settingsError } = await supabase
+            .from('campaign_settings')
+            .select('*')
+            .limit(1)
+            .single(); // .single() ensures we get one object, not an array
+
+        if (settingsError && settingsError.code !== 'PGRST116') { // Ignore 'Range not satisfiable' error for empty tables
+            console.error('Supabase settings fetch error:', settingsError);
+            // Don't throw; we can use the fallback
+        }
+
+        const liveCampaign = settings ? { ...fallbackCampaign, ...settings } : fallbackCampaign;
+
+        // --- Step 2: Fetch Approved Donations ---
         const { data: approvedDonations, error: donationsError } = await supabase
             .from('donations')
             .select('*')
@@ -26,27 +40,25 @@ export default async function handler(req, res) {
             throw new Error('Failed to fetch donations.');
         }
 
-        // Calculate stats based on the fetched data
+        // --- Step 3: Calculate Stats ---
         const totalTrees = approvedDonations.reduce((acc, curr) => acc + curr.tree_quantity, 0);
         const totalAmount = approvedDonations.reduce((acc, curr) => acc + curr.amount, 0);
 
-        // In a real application, you might fetch pending donations separately if needed.
-        // For now, we will assume pending stats are not shown on the main page.
         const stats: Stats = {
             totalTrees: totalTrees,
             totalAmount: totalAmount,
-            pendingTrees: 0, // This can be updated if we add a 'pending' fetch
-            goalTrees: defaultCampaign.goal_trees,
+            pendingTrees: 0, // Pending trees are not shown on the public page
+            goalTrees: liveCampaign.goal_trees,
         };
 
-        // Get the most recent donors
+        // --- Step 4: Get Recent Donors ---
         const recentDonors = approvedDonations
             .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
             .slice(0, 5);
 
-        // Assemble the response
+        // --- Step 5: Assemble and Send Response ---
         const apiResponse = {
-            campaign: { ...defaultCampaign, trees_approved: totalTrees },
+            campaign: { ...liveCampaign, trees_approved: totalTrees },
             stats: stats,
             recentDonors: recentDonors,
         };
@@ -57,6 +69,11 @@ export default async function handler(req, res) {
 
     } catch (error) {
         console.error("API Error:", error.message);
-        res.status(500).json({ message: 'Internal Server Error' });
+        // If something goes wrong, serve a fallback response to keep the site alive.
+        res.status(500).json({
+            campaign: fallbackCampaign,
+            stats: { totalTrees: 0, totalAmount: 0, pendingTrees: 0, goalTrees: fallbackCampaign.goal_trees },
+            recentDonors: [],
+        });
     }
 }
