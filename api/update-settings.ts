@@ -1,7 +1,7 @@
 import { IncomingForm, File } from 'formidable';
 import { promises as fs } from 'fs';
 import { supabase } from '../services/supabaseClient';
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export const config = {
     api: {
@@ -14,7 +14,7 @@ type FormidableResult = {
     files: { [key: string]: File | File[] };
 }
 
-const parseForm = (req: NextApiRequest): Promise<FormidableResult> => {
+const parseForm = (req: VercelRequest): Promise<FormidableResult> => {
     return new Promise((resolve, reject) => {
         const form = new IncomingForm();
         form.parse(req, (err, fields, files) => {
@@ -24,7 +24,7 @@ const parseForm = (req: NextApiRequest): Promise<FormidableResult> => {
     });
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
         return res.status(405).end('Method Not Allowed');

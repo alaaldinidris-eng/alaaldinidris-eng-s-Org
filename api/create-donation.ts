@@ -1,7 +1,7 @@
 import { IncomingForm, File } from 'formidable';
 import { promises as fs } from 'fs';
 import { supabase } from '../services/supabaseClient';
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export const config = {
     api: {
@@ -14,7 +14,7 @@ type FormidableResult = {
     files: { [key: string]: File | File[] };
 }
 
-const parseForm = (req: NextApiRequest): Promise<FormidableResult> => {
+const parseForm = (req: VercelRequest): Promise<FormidableResult> => {
     return new Promise((resolve, reject) => {
         const form = new IncomingForm();
         form.parse(req, (err, fields, files) => {
@@ -24,7 +24,7 @@ const parseForm = (req: NextApiRequest): Promise<FormidableResult> => {
     });
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
         return res.status(405).end('Method Not Allowed');
@@ -33,7 +33,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
         const { fields, files } = await parseForm(req);
 
-        // --- 1. Validate Form Data ---
         const quantity = Array.isArray(fields.quantity) ? fields.quantity[0] : fields.quantity;
         const donorName = Array.isArray(fields.donorName) ? fields.donorName[0] : fields.donorName;
         const proofFile = Array.isArray(files.proof) ? files.proof[0] : files.proof;
@@ -46,7 +45,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const name = donorName || 'Anonymous Donor';
         const file = proofFile;
 
-        // --- 2. Upload to Supabase Storage ---
         const fileContent = await fs.readFile(file.filepath);
         const fileName = `proof_${Date.now()}_${file.originalFilename}`;
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -57,18 +55,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             });
 
         if (uploadError) {
-            console.error('Supabase storage error:', uploadError);
-            throw new Error('Failed to upload proof to storage.');
+            throw new Error(`Storage Error: ${uploadError.message}`);
         }
 
-        // --- 3. Get Public URL ---
         const { data: urlData } = supabase.storage
             .from('donation-proofs')
             .getPublicUrl(uploadData.path);
 
         const proofUrl = urlData.publicUrl;
 
-        // --- 4. Create Donation Record in Database ---
         const donationData = {
             id: `DON-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
             donor_name: name,
@@ -81,14 +76,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const { error: insertError } = await supabase.from('donations').insert(donationData);
 
         if (insertError) {
-            console.error('Supabase insert error:', insertError);
-            throw new Error('Failed to create donation record.');
+            throw new Error(`Database Error: ${insertError.message}`);
         }
 
         res.status(200).json({ message: 'Donation submitted successfully!', data: donationData });
 
     } catch (error) {
         console.error('Create-donation API error:', error);
-        res.status(500).json({ message: 'Internal Server Error' });
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
 }
