@@ -11,6 +11,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<'landing' | 'admin' | 'login'>('landing');
   const [data, setData] = useState<{ campaign: Campaign | null, stats: Stats | null, recentDonors: Donation[] }>({ campaign: null, stats: null, recentDonors: [] });
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [thankYouMessage, setThankYouMessage] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
     try { return localStorage.getItem('treefund_logged_in') === 'true'; } catch { return false; }
@@ -18,11 +19,16 @@ const App: React.FC = () => {
 
   const refreshData = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const [campaign, stats, recentDonors] = await Promise.all([getCampaign(), getStats(), getRecentApprovedDonations(5)]);
       setData({ campaign, stats, recentDonors });
-    } catch (e) { console.error("Data refresh failed", e); }
-    finally { setIsLoading(false); }
+    } catch (e) {
+      console.error("Data refresh failed", e);
+      setError("Failed to load campaign data. The forest seems to be asleep. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -59,12 +65,14 @@ const App: React.FC = () => {
 
   if (view === 'login') return <LoginScreen onLogin={handleAdminLogin} />;
   if (view === 'admin') return <Layout isAdmin onLogout={handleLogout}><AdminDashboard /></Layout>;
-  if (isLoading || !data.campaign || !data.stats) return <LoadingScreen />;
+  if (isLoading) return <LoadingScreen />;
+  if (error) return <ErrorScreen message={error} onRetry={refreshData} />;
+  if (!data.campaign || !data.stats) return <ErrorScreen message="Campaign data is missing." onRetry={refreshData} />;
 
   return (
     <Layout>
       <div className="bg-gray-50 relative">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 grid grid-cols-1 lg:grid-cols-12 gap-16 items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
           <div className="lg:col-span-7 space-y-12">
             <MainContent campaign={data.campaign} stats={data.stats} recentDonors={data.recentDonors} />
           </div>
@@ -88,6 +96,17 @@ const LoadingScreen = () => (
             <h1 className="text-xl font-bold text-gray-700">Loading Campaign...</h1>
             <p className="text-gray-500">Fetching the latest stats from the forest.</p>
         </div>
+    </div>
+);
+
+const ErrorScreen = ({ message, onRetry }) => (
+    <div className="w-full h-screen flex flex-col items-center justify-center bg-white space-y-6 text-center px-4">
+        <div className="w-20 h-20 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center shadow-md">{ICONS.X}</div>
+        <div className="text-center">
+            <h1 className="text-xl font-bold text-gray-800">Connection Error</h1>
+            <p className="text-gray-500 mt-2">{message}</p>
+        </div>
+        <button onClick={onRetry} className="btn-primary py-3 px-6">Try Again</button>
     </div>
 );
 
