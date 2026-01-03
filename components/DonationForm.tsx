@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { ICONS, TREE_PRICE } from '../constants';
-import { createDonation } from '../services/supabaseService';
-import { generateImpactMessage } from '../services/geminiService';
 
 interface DonationFormProps {
   qrUrl: string;
@@ -12,7 +10,7 @@ export const DonationForm: React.FC<DonationFormProps> = ({ qrUrl, onSuccess }) 
   const [step, setStep] = useState(1);
   const [quantity, setQuantity] = useState(5);
   const [customQty, setCustomQty] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [donorName, setDonorName] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -23,7 +21,7 @@ export const DonationForm: React.FC<DonationFormProps> = ({ qrUrl, onSuccess }) 
     const selectedFile = e.target.files?.[0] || null;
     if (selectedFile) {
       if (selectedFile.size > 5 * 1024 * 1024) {
-        alert("File size too large. Please upload an image under 5MB.");
+        alert("File is too large. Max size is 5MB.");
         return;
       }
       setFile(selectedFile);
@@ -37,6 +35,7 @@ export const DonationForm: React.FC<DonationFormProps> = ({ qrUrl, onSuccess }) 
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setStep(prev => prev + 1);
   };
+
   const handlePrevStep = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setStep(prev => prev - 1);
@@ -44,28 +43,36 @@ export const DonationForm: React.FC<DonationFormProps> = ({ qrUrl, onSuccess }) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!preview) {
-      alert("Please upload your payment receipt.");
+    if (!file) {
+      alert("Please upload your payment receipt to verify.");
       return;
     }
 
-    setIsUploading(true);
+    setIsSubmitting(true);
     const qty = customQty ? parseInt(customQty) : quantity;
     
+    const formData = new FormData();
+    formData.append('quantity', String(qty));
+    formData.append('donorName', donorName || 'Anonymous');
+    formData.append('proof', file);
+
     try {
-      createDonation({
-        tree_quantity: qty,
-        amount: qty * TREE_PRICE,
-        receipt_url: preview,
-        donor_name: donorName || 'Anonymous Donor'
+      const response = await fetch('/api/create-donation', {
+        method: 'POST',
+        body: formData,
       });
 
-      const impactMessage = await generateImpactMessage(qty);
-      onSuccess(impactMessage);
-    } catch (err) {
+      if (!response.ok) {
+        throw new Error('Donation submission failed.');
+      }
+
       onSuccess(`Thank you for your incredible support in planting ${qty} trees! Your contribution is being verified.`);
+
+    } catch (err) {
+      console.error(err);
+      onSuccess(`Thank you for sponsoring ${qty} trees! Your donation is being verified.`);
     } finally {
-      setIsUploading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -243,10 +250,10 @@ export const DonationForm: React.FC<DonationFormProps> = ({ qrUrl, onSuccess }) 
               </button>
               <button
                 type="submit"
-                disabled={!preview || isUploading}
+                disabled={!preview || isSubmitting}
                 className="flex-[2] py-6 bg-green-600 hover:bg-green-700 disabled:opacity-30 text-white font-black rounded-2xl transition-all shadow-2xl shadow-green-200 flex items-center justify-center gap-3 group text-xs uppercase tracking-[0.2em]"
               >
-                {isUploading ? (
+                {isSubmitting ? (
                   <span className="flex items-center gap-3">
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                     Securing Impact...
