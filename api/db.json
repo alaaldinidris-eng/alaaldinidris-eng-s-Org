@@ -1,0 +1,29 @@
+{
+  "campaign": {
+    "id": "main-campaign",
+    "title": "Restore our Rainforests",
+    "description": "Join us in restoring the biodiversity of Malaysian tropical forests. Every seedling counts toward a sustainable future for our wildlife and climate.",
+    "tree_price": 10,
+    "goal_trees": 1000,
+    "trees_approved": 500,
+    "qr_image_url": "https://storage.googleapis.com/treefund-mock-qr/qr-code.png"
+  },
+  "donations": [
+    {
+      "id": "DON-ABCDE",
+      "donor_name": "John Doe",
+      "tree_quantity": 5,
+      "amount": 50,
+      "status": "APPROVED",
+      "created_at": "2024-07-22T10:00:00Z"
+    },
+    {
+      "id": "DON-FGHIJ",
+      "donor_name": "Jane Smith",
+      "tree_quantity": 10,
+      "amount": 100,
+      "status": "APPROVED",
+      "created_at": "2024-07-21T11:30:00Z"
+    }
+  ]
+}

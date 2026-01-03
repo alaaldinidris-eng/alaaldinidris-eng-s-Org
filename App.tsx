@@ -12,18 +12,31 @@ const App: React.FC = () => {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [recentDonors, setRecentDonors] = useState<Donation[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [thankYouMessage, setThankYouMessage] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    return localStorage.getItem('treefund_logged_in') === 'true';
+    try {
+      return localStorage.getItem('treefund_logged_in') === 'true';
+    } catch {
+      return false;
+    }
   });
 
-  const refreshData = () => {
+  const refreshData = async () => {
+    setIsLoading(true);
     try {
-      setCampaign(getCampaign());
-      setStats(getStats());
-      setRecentDonors(getRecentApprovedDonations(5));
+      const [campaignData, statsData, donorsData] = await Promise.all([
+        getCampaign(),
+        getStats(),
+        getRecentApprovedDonations(5)
+      ]);
+      setCampaign(campaignData);
+      setStats(statsData);
+      setRecentDonors(donorsData);
     } catch (e) {
       console.error("Data refresh failed", e);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -39,30 +52,34 @@ const App: React.FC = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    handleHash();
-    window.addEventListener('hashchange', handleHash);
-    refreshData();
+    const initLoad = async () => {
+      handleHash();
+      await refreshData();
+    };
 
+    initLoad();
+
+    window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
   }, [isLoggedIn]);
 
   const handleAdminLogin = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setIsLoggedIn(true);
     localStorage.setItem('treefund_logged_in', 'true');
+    setIsLoggedIn(true);
     setView('admin');
     window.location.hash = '#admin';
   };
 
   const handleLogout = () => {
-    setIsLoggedIn(false);
     localStorage.removeItem('treefund_logged_in');
+    setIsLoggedIn(false);
     window.location.hash = '';
   };
 
-  const handleDonationSuccess = (message: string) => {
+  const handleDonationSuccess = async (message: string) => {
     setThankYouMessage(message);
-    refreshData();
+    await refreshData();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -101,6 +118,20 @@ const App: React.FC = () => {
     );
   }
 
+  if (isLoading) {
+    return (
+        <div className="w-full h-screen flex flex-col items-center justify-center bg-[#fcfdfc] space-y-8">
+            <div className="w-24 h-24 bg-green-600 text-white rounded-[2.2rem] flex items-center justify-center mx-auto shadow-2xl shadow-green-100 rotate-6">
+              <div className="scale-150 animate-pulse">{ICONS.Trees}</div>
+            </div>
+            <div className="text-center">
+                <h1 className="text-2xl font-black text-gray-800">Securing the Grove...</h1>
+                <p className="text-gray-500 font-medium mt-2">Connecting to our digital forest to get the latest stats.</p>
+            </div>
+        </div>
+    )
+  }
+
   return (
     <Layout onAdminClick={() => window.location.hash = '#admin'}>
       <div className="bg-[#fcfdfc] relative overflow-hidden min-h-screen">
@@ -114,7 +145,7 @@ const App: React.FC = () => {
                 Foster a<br/><span className="text-green-600">Forest.</span>
               </h1>
               <p className="text-2xl text-gray-500 max-w-xl leading-relaxed font-medium">
-                Every RM 10 sponsors one native seedling to restore our natural ecosystem.
+                {campaign?.description}
               </p>
             </div>
 
@@ -127,7 +158,7 @@ const App: React.FC = () => {
             <div className="space-y-8">
                <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.3em] ml-4">Guardians of the Soil</h3>
                <div className="flex flex-wrap gap-5">
-                  {recentDonors.map((donor, idx) => (
+                  {recentDonors.map((donor) => (
                     <div key={donor.id} className="bg-white px-7 py-4 rounded-[2rem] shadow-sm border border-gray-100 flex items-center gap-4">
                        <div className="w-10 h-10 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center font-black text-xs">
                           {donor.donor_name?.[0].toUpperCase() || 'A'}

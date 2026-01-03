@@ -1,53 +1,77 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Donation, DonationStatus, Campaign, Stats } from '../types';
-import { getDonations, updateDonationStatus, getCampaign, updateCampaign, getStats } from '../services/supabaseService';
+import {
+  getAdminAllDonations,
+  adminUpdateDonationStatus,
+  getCampaign,
+  adminUpdateCampaign,
+  getStats
+} from '../services/supabaseService';
 import { ICONS } from '../constants';
 
 export const AdminDashboard: React.FC = () => {
   const [donations, setDonations] = useState<Donation[]>([]);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'pending' | 'history' | 'settings'>('pending');
   const [isEditing, setIsEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingReceipt, setViewingReceipt] = useState<string | null>(null);
 
-  useEffect(() => {
-    refreshData();
+  const refreshData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [donationsData, campaignData, statsData] = await Promise.all([
+        getAdminAllDonations(),
+        getCampaign(),
+        getStats(),
+      ]);
+      setDonations(donationsData);
+      setCampaign(campaignData);
+      setStats(statsData);
+    } catch (error) {
+      console.error("Failed to refresh admin data:", error);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const refreshData = () => {
-    setDonations(getDonations());
-    setCampaign(getCampaign());
-    setStats(getStats());
-  };
-
-  const handleStatusChange = (id: string, status: DonationStatus) => {
-    updateDonationStatus(id, status);
+  useEffect(() => {
     refreshData();
+  }, [refreshData]);
+
+  const handleStatusChange = async (id: string, status: DonationStatus) => {
+    await adminUpdateDonationStatus(id, status);
+    await refreshData();
   };
 
-  const handleUpdateCampaign = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleUpdateCampaign = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const updated = updateCampaign({
+    const updatedData = {
       title: formData.get('title') as string,
       goal_trees: parseInt(formData.get('goal') as string),
       tree_price: parseInt(formData.get('price') as string),
       qr_image_url: formData.get('qr') as string,
-    });
+    };
+    const updated = await adminUpdateCampaign(updatedData);
     setCampaign(updated);
     setIsEditing(false);
-    refreshData();
+    await refreshData();
   };
 
   const filteredDonations = donations.filter(d => 
     d.donor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    d.id.includes(searchTerm)
+    d.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const pendingDonations = filteredDonations.filter(d => d.status === DonationStatus.PENDING);
   const historyDonations = filteredDonations.filter(d => d.status !== DonationStatus.PENDING);
+
+  if (isLoading) {
+      return <div className="text-center p-24 font-black">Loading Admin Console...</div>
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10">
